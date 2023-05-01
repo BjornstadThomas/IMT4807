@@ -1,10 +1,12 @@
 import sys
+import os
+import time
 import numpy as np
 import torch
 from PIL import Image, ImageQt
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                              QLabel, QSlider, QLineEdit, QCheckBox, QProgressBar,
-                             QPushButton, QFileDialog, QGraphicsScene, QGraphicsView, QWidget)
+                             QPushButton, QFileDialog, QGraphicsScene, QGraphicsView, QWidget, QMessageBox)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
 
@@ -18,7 +20,7 @@ network_pkl = 'C:\\Users\\Thomas\\PycharmProjects\\scientificProject\\models\\ne
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 with dnnlib.util.open_url(network_pkl) as fp:
-    G = legacy.load_network_pkl(fp)['G_ema'].to(device)
+    G = None #legacy.load_network_pkl(fp)['G_ema'].to(device)
 
 
 class CustomSlider(QHBoxLayout):
@@ -118,10 +120,12 @@ class ImaGenie(QMainWindow):
         self.seed = 0
 
     def browse_model(self):
+        global G  # Add this line to access the global G variable
+
         model_path, _ = QFileDialog.getOpenFileName(self, 'Open Model', '', 'Pickle Files (*.pkl);;All Files (*)')
         if model_path:
             with open(model_path, 'rb') as fp:
-                G = legacy.load_network_pkl(fp)['G_ema'].to(device)
+                G = legacy.load_network_pkl(fp)['G_ema'].to(device)  # Update this line
             self.model_path_label.setText(f"Model Path: {model_path}")
 
     def update_seeds_input_state(self):
@@ -135,6 +139,11 @@ class ImaGenie(QMainWindow):
             variable.setEnabled(state)
 
     def generate_images(self):
+        global G  # Add this line to access the global G variable
+        if G is None:
+            self.show_error_message("No Model Loaded", "Please load a model before generating images.")
+            return
+
         if self.num_images_slider.slider.value() > 1:
             seeds = range(self.seed, self.seed + self.num_images_slider.slider.value())
         else:
@@ -159,6 +168,13 @@ class ImaGenie(QMainWindow):
 
         self.seed += self.num_images_slider.slider.value()
 
+        # Save generated images
+        model_name = os.path.splitext(os.path.basename(self.model_path_label.text().replace("Model Path: ", "")))[0]
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        #timestamp = time.strftime("%Y.%m.%d-%H:%M:%S")
+        output_dir = os.path.join("result", f"{model_name}_{timestamp}")
+        self.save_images(self.images, output_dir)
+
         self.display_images()
 
     def display_images(self):
@@ -182,6 +198,20 @@ class ImaGenie(QMainWindow):
             if self.current_image_index >= len(self.images):
                 self.current_image_index = 0
             self.display_images()
+
+    def show_error_message(self, title, message):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.exec_()
+
+    def save_images(self, images, output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        for i, image in enumerate(images):
+            image_path = os.path.join(output_dir, f'image_{i + 1}.png')
+            image.save(image_path)
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
