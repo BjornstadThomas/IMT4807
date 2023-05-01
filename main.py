@@ -6,7 +6,8 @@ import torch
 from PIL import Image, ImageQt
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                              QLabel, QSlider, QLineEdit, QCheckBox, QProgressBar,
-                             QPushButton, QFileDialog, QGraphicsScene, QGraphicsView, QWidget, QMessageBox, QSpinBox)
+                             QPushButton, QFileDialog, QGraphicsScene, QGraphicsView,
+                             QWidget, QMessageBox, QSpinBox, QRadioButton, QButtonGroup)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
 
@@ -72,6 +73,10 @@ class ImaGenie(QMainWindow):
         vbox.addWidget(self.browse_button)
 
         self.model_path_label = QLabel("Model Path: None")
+        self.model_path_label.setMaximumHeight(50)  # Adjust the value to set the desired height
+        font = self.model_path_label.font()
+        font.setPointSize(14)  # Set the desired font size
+        self.model_path_label.setFont(font)
         vbox.addWidget(self.model_path_label)
 
         hbox = QHBoxLayout()
@@ -89,6 +94,28 @@ class ImaGenie(QMainWindow):
         vbox.addLayout(self.truncation_slider)
         self.truncation_slider.set_visible(False)
 
+        hbox = QHBoxLayout()
+        hbox.setAlignment(Qt.AlignLeft)
+        hbox.addWidget(QLabel("Noise mode:"))
+        self.const_noise_mode = QRadioButton("Const")
+        self.random_noise_mode = QRadioButton("Random")
+        self.none_noise_mode = QRadioButton("None")
+        self.noise_mode_group = QButtonGroup(self)
+        self.noise_mode_group.addButton(self.const_noise_mode)
+        self.noise_mode_group.addButton(self.random_noise_mode)
+        self.noise_mode_group.addButton(self.none_noise_mode)
+        self.const_noise_mode.setChecked(True)  # Set 'const' as the default option
+        hbox.addWidget(self.const_noise_mode)
+        hbox.addWidget(self.random_noise_mode)
+        hbox.addWidget(self.none_noise_mode)
+        vbox.addLayout(hbox)
+
+        self.noise_mode_group.setExclusive(True)
+        #self.noise_mode_group.setVisible(True)
+        self.const_noise_mode.setVisible(False)
+        self.random_noise_mode.setVisible(False)
+        self.none_noise_mode.setVisible(False)
+
 
         self.variables_checkbox = QCheckBox("Options", self)
         self.variables_checkbox.stateChanged.connect(self.toggle_variables_state)
@@ -96,11 +123,6 @@ class ImaGenie(QMainWindow):
         vbox.addWidget(self.variables_checkbox)
 
         self.variables_group = []
-
-        # Add more sliders and text fields for generator variables here
-        # Example: custom_slider = CustomSlider("Variable Name (min-max):", min_val, max_val, default_val, decimals=2)
-        # self.variables_group.append(custom_slider)
-        # vbox.addWidget(custom_slider)
 
         for variable in self.variables_group:
             variable.setEnabled(False)
@@ -110,6 +132,7 @@ class ImaGenie(QMainWindow):
         vbox.addWidget(gen_button)
 
         self.image_display = QLabel(self)
+        self.image_display.setAlignment(Qt.AlignCenter)
         vbox.addWidget(self.image_display)
 
         hbox = QHBoxLayout()
@@ -189,6 +212,7 @@ class ImaGenie(QMainWindow):
             # Generate images
             z = torch.from_numpy(np.random.RandomState(seed).randn(1, G.z_dim)).to(device)
             img = G(z, None, truncation_psi=self.truncation_slider.slider.value() / 100)
+            #img = G(z, None, truncation_psi=self.truncation_slider.slider.value() / 100, noise_mode=self.noise_mode)
             img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
             pil_img = Image.fromarray(img[0].cpu().numpy(), 'RGB')
 
@@ -244,8 +268,21 @@ class ImaGenie(QMainWindow):
             image.save(image_path)
 
     def toggle_options_visibility(self, state):
-        self.truncation_slider.set_visible(state)
-        self.seeds_input.setVisible(state)
+        visible = state == Qt.Checked
+        self.truncation_slider.set_visible(visible)
+        self.seeds_input.setVisible(visible)
+        self.const_noise_mode.setVisible(visible)
+        self.random_noise_mode.setVisible(visible)
+        self.none_noise_mode.setVisible(visible)
+
+    def set_noise_mode(self):
+        if self.const_noise_mode.isChecked():
+            self.noise_mode = 'const'
+        elif self.random_noise_mode.isChecked():
+            self.noise_mode = 'random'
+        elif self.none_noise_mode.isChecked():
+            self.noise_mode = 'none'
+
 
 
 if __name__ == '__main__':
