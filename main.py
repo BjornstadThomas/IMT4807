@@ -6,7 +6,7 @@ import torch
 from PIL import Image, ImageQt
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                              QLabel, QSlider, QLineEdit, QCheckBox, QProgressBar,
-                             QPushButton, QFileDialog, QGraphicsScene, QGraphicsView, QWidget, QMessageBox)
+                             QPushButton, QFileDialog, QGraphicsScene, QGraphicsView, QWidget, QMessageBox, QSpinBox)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
 
@@ -34,17 +34,26 @@ class CustomSlider(QHBoxLayout):
         self.slider.setTickPosition(QSlider.TicksBelow)
         self.slider.setTickInterval((max_val - min_val) // 10)
 
-        self.value_label = QLabel(f"{default_val / (10 ** decimals):.{decimals}f}")
+        self.value_input = QSpinBox()
+        self.value_input.setMinimum(min_val)
+        self.value_input.setMaximum(max_val)
+        self.value_input.setValue(default_val)
         self.slider.valueChanged.connect(self.update_value)
+        self.value_input.valueChanged.connect(self.update_value)
 
         self.addWidget(self.label)
         self.addWidget(self.slider)
-        self.addWidget(self.value_label)
+        self.addWidget(self.value_input)
         self.decimals = decimals
 
     def update_value(self, value):
-        self.value_label.setText(f"{value / (10 ** self.decimals):.{self.decimals}f}")
+        self.slider.setValue(value)
+        self.value_input.setValue(value)
 
+    def set_visible(self, visible):
+        self.label.setVisible(visible)
+        self.slider.setVisible(visible)
+        self.value_input.setVisible(visible)
 
 class ImaGenie(QMainWindow):
     def __init__(self):
@@ -74,15 +83,16 @@ class ImaGenie(QMainWindow):
         self.seeds_input.setPlaceholderText("Enter specific seeds, e.g. 1,2,3-5")
         hbox.addWidget(self.seeds_input)
         vbox.addLayout(hbox)
+        self.seeds_input.setVisible(False)
 
         self.truncation_slider = CustomSlider("Truncation (1-100):", 1, 100, 50)
-        vbox.addWidget(self.truncation_slider.slider)
+        vbox.addLayout(self.truncation_slider)
+        self.truncation_slider.set_visible(False)
 
-        self.progress_bar = QProgressBar(self)
-        vbox.addWidget(self.progress_bar)
 
         self.variables_checkbox = QCheckBox("Options", self)
         self.variables_checkbox.stateChanged.connect(self.toggle_variables_state)
+        self.variables_checkbox.stateChanged.connect(self.toggle_options_visibility)
         vbox.addWidget(self.variables_checkbox)
 
         self.variables_group = []
@@ -110,6 +120,25 @@ class ImaGenie(QMainWindow):
         next_button.clicked.connect(self.next_image)
         hbox.addWidget(next_button)
         vbox.addLayout(hbox)
+
+        #PROGRESS BAR#
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid grey;
+                border-radius: 5px;
+                background-color: #FFFFFF;
+                text-align: center;
+            }
+
+            QProgressBar::chunk {
+                background-color: #05B8CC;
+                width: 10px;
+                margin: 0.5px;
+            }
+        """)
+        self.progress_bar.setMinimumHeight(20)
+        vbox.addWidget(self.progress_bar)
 
         central_widget = QWidget()
         central_widget.setLayout(vbox)
@@ -139,17 +168,19 @@ class ImaGenie(QMainWindow):
             variable.setEnabled(state)
 
     def generate_images(self):
-        global G  # Add this line to access the global G variable
+        global G
         if G is None:
             self.show_error_message("No Model Loaded", "Please load a model before generating images.")
             return
 
-        if self.num_images_slider.slider.value() > 1:
-            seeds = range(self.seed, self.seed + self.num_images_slider.slider.value())
+        if self.num_images_slider.value_input.value() > 1:
+            seeds = range(self.seed, self.seed + self.num_images_slider.value_input.value())
         else:
             seeds = [int(seed) for seed in self.seeds_input.text().split(',') if '-' not in seed] + \
                     [int(seed.strip()) for seed_range in self.seeds_input.text().split(',') if '-' in seed_range
                      for seed in range(int(seed_range.split('-')[0]), int(seed_range.split('-')[1]) + 1)]
+
+        # Rest of the function remains the same
 
         self.progress_bar.setMaximum(len(seeds))
         self.progress_bar.setValue(0)
@@ -211,6 +242,10 @@ class ImaGenie(QMainWindow):
         for i, image in enumerate(images):
             image_path = os.path.join(output_dir, f'image_{i + 1}.png')
             image.save(image_path)
+
+    def toggle_options_visibility(self, state):
+        self.truncation_slider.set_visible(state)
+        self.seeds_input.setVisible(state)
 
 
 if __name__ == '__main__':
