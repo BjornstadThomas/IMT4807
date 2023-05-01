@@ -4,3 +4,4 @@
 models
 models/network-snapshot-*.pkl
 *.pkl
+images
