@@ -415,6 +415,7 @@ class ImaGenie(QMainWindow):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
+    app.setWindowIcon(QIcon("resources/Logo ImaGenie.jpg"))
     main = ImaGenie()
     main.show()
     sys.exit(app.exec_())
