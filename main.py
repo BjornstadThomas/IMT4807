@@ -7,13 +7,21 @@ from PIL import Image, ImageQt
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                              QLabel, QSlider, QLineEdit, QCheckBox, QProgressBar,
                              QPushButton, QFileDialog, QGraphicsScene, QGraphicsView,
-                             QWidget, QMessageBox, QSpinBox, QRadioButton, QButtonGroup)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap
+                             QWidget, QMessageBox, QSpinBox, QRadioButton, QButtonGroup,
+                             QToolBar, QAction, QComboBox)
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtGui import QPixmap, QIcon, QDesktopServices
+import subprocess
+import configparser
+import requests
+import tempfile
+import traceback
+
 
 # Import stylegan2-ada-pytorch dependencies
 sys.path.append("stylegan2")
 import stylegan2.dnnlib as dnnlib
+import stylegan2.dnnlib.util
 import stylegan2.legacy as legacy
 
 # Load pre-trained StyleGAN2 model
@@ -23,6 +31,11 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 with dnnlib.util.open_url(network_pkl) as fp:
     G = None #legacy.load_network_pkl(fp)['G_ema'].to(device)
 
+
+# Read config file
+config = configparser.ConfigParser()
+config.read('config.ini')
+download_models_url = config.get('links', 'download_models_url')
 
 class CustomSlider(QHBoxLayout):
     def __init__(self, label_text, min_val, max_val, default_val, decimals=0):
@@ -62,6 +75,7 @@ class ImaGenie(QMainWindow):
 
         self.setWindowTitle('ImaGenie - Image Generation Tool')
         self.setGeometry(100, 100, 1200, 800)
+        self.setMinimumWidth(400)
 
         self.initUI()
 
@@ -80,12 +94,33 @@ class ImaGenie(QMainWindow):
         vbox.addWidget(self.model_path_label)
 
         hbox = QHBoxLayout()
+
+        # New code: Download Model Button
+        self.download_model_button = QPushButton("Download Model", self)
+        self.download_model_button.clicked.connect(self.open_download_page)
+        hbox.addWidget(self.download_model_button)
+
+        # New code: Model Dropdown Menu
+        self.model_dropdown = QComboBox(self)
+        self.model_dropdown.addItem("None")
+        self.model_dropdown.addItem("MetFaces")
+        self.model_dropdown.addItem("CIFAR-10")
+        self.model_dropdown.addItem("FFHQ")
+        self.model_dropdown.currentIndexChanged.connect(self.on_model_selected)
+        hbox.addWidget(self.model_dropdown)
+
+        hbox2 = QHBoxLayout()
+
         self.num_images_slider = CustomSlider("Number of Images (1-1000):", 1, 1000, 1)
-        hbox.addLayout(self.num_images_slider)
+        hbox2.addLayout(self.num_images_slider)
         self.num_images_slider.slider.valueChanged.connect(self.update_seeds_input_state)
+
+        vbox.addLayout(hbox)
+        vbox.addLayout(hbox2)
 
         self.seeds_input = QLineEdit(self)
         self.seeds_input.setPlaceholderText("Enter specific seeds, e.g. 1,2,3-5")
+        self.seeds_input.setMaximumWidth(self.width() * 0.5)
         hbox.addWidget(self.seeds_input)
         vbox.addLayout(hbox)
         self.seeds_input.setVisible(False)
@@ -96,7 +131,12 @@ class ImaGenie(QMainWindow):
 
         hbox = QHBoxLayout()
         hbox.setAlignment(Qt.AlignLeft)
-        hbox.addWidget(QLabel("Noise mode:"))
+
+        # Add this code snippet to create the noise_mode_label object
+        self.noise_mode_label = QLabel("Noise mode:")
+        hbox.addWidget(self.noise_mode_label)
+        self.noise_mode_label.setVisible(False)  # Initially hide the label
+
         self.const_noise_mode = QRadioButton("Const")
         self.random_noise_mode = QRadioButton("Random")
         self.none_noise_mode = QRadioButton("None")
@@ -171,14 +211,61 @@ class ImaGenie(QMainWindow):
         self.current_image_index = 0
         self.seed = 0
 
+        # Add this block of code to create a help button and connect it to the open_help_pdf method
+        help_button_action = QAction(QIcon("resources/Help.png"), "Help", self)
+        help_button_action.triggered.connect(self.open_user_guide)
+        toolbar = QToolBar()
+        self.addToolBar(Qt.TopToolBarArea, toolbar)
+        toolbar.addAction(help_button_action)
+        toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+
     def browse_model(self):
         global G  # Add this line to access the global G variable
+
+        if self.model_dropdown.currentText() != "None":
+            return
 
         model_path, _ = QFileDialog.getOpenFileName(self, 'Open Model', '', 'Pickle Files (*.pkl);;All Files (*)')
         if model_path:
             with open(model_path, 'rb') as fp:
                 G = legacy.load_network_pkl(fp)['G_ema'].to(device)  # Update this line
             self.model_path_label.setText(f"Model Path: {model_path}")
+
+    def open_download_page(self):
+        # Update the download_models_url with your desired URL
+        download_models_url = "https://example.com/download_models"
+        QDesktopServices.openUrl(QUrl(download_models_url))
+
+    def on_model_selected(self, index):
+        try:
+            if self.model_dropdown.currentText() != "None":
+                self.browse_button.setEnabled(False)
+            else:
+                self.browse_button.setEnabled(True)
+
+            model_name = self.model_dropdown.currentText()
+            if index == 0:
+                self.model_path_label.setText("Model Path: None")
+            else:
+                self.model_path_label.setText(f"Selected Model: {model_name}")
+                model_url = config.get('models', model_name.lower())
+                self.download_and_load_model(model_url)
+        except Exception as e:
+            print(f"Error occurred: {e}")
+            traceback.print_exc()
+
+    def download_and_load_model(self, model_url):
+        cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "stylegan2")
+        os.makedirs(cache_dir, exist_ok=True)
+
+        cache_file = dnnlib.util.open_url(model_url, cache_dir=cache_dir, return_filename=True)
+
+        with open(cache_file, "rb") as f:
+            self.G = torch.jit.load(f).cuda()
+
+        self.update_generate_images_button()
 
     def update_seeds_input_state(self):
         if self.num_images_slider.slider.value() > 1:
@@ -192,9 +279,29 @@ class ImaGenie(QMainWindow):
 
     def generate_images(self):
         global G
-        if G is None:
+        selected_model = self.model_dropdown.currentText()
+        if G is None and selected_model == "None":
             self.show_error_message("No Model Loaded", "Please load a model before generating images.")
             return
+
+        if selected_model != "None":
+            # Read the download URL for the selected model from the config.ini file
+            model_url = config.get('links', selected_model.lower().replace(" ", "_") + '_url')
+            if not model_url:
+                self.show_error_message("Invalid Model URL",
+                                        "The URL for the selected model is not found in the config.ini file.")
+                return
+
+            # Download the model and save it to a temporary file
+            model_response = requests.get(model_url)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as fp:
+                fp.write(model_response.content)
+                model_path = fp.name
+
+            # Load the model
+            with open(model_path, 'rb') as fp:
+                G = legacy.load_network_pkl(fp)['G_ema'].to(device)
+            os.unlink(model_path)  # Delete the temporary model file
 
         if self.num_images_slider.value_input.value() > 1:
             seeds = range(self.seed, self.seed + self.num_images_slider.value_input.value())
@@ -275,6 +382,9 @@ class ImaGenie(QMainWindow):
         self.random_noise_mode.setVisible(visible)
         self.none_noise_mode.setVisible(visible)
 
+        # Add this line to show/hide the "Noise Mode" label
+        self.noise_mode_label.setVisible(visible)
+
     def set_noise_mode(self):
         if self.const_noise_mode.isChecked():
             self.noise_mode = 'const'
@@ -283,6 +393,23 @@ class ImaGenie(QMainWindow):
         elif self.none_noise_mode.isChecked():
             self.noise_mode = 'none'
 
+    def open_user_guide(self):
+        user_guide_path = os.path.join("resources", "user_guide.pdf")
+        if not os.path.isfile(user_guide_path):
+            self.show_error_message("User Guide Missing",
+                                    "The user guide is missing. Please make sure it is located in the 'resources' folder.")
+            return
+
+        try:
+            if sys.platform == 'win32':
+                os.startfile(user_guide_path)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', user_guide_path])
+            else:
+                subprocess.Popen(['xdg-open', user_guide_path])
+        except Exception as e:
+            self.show_error_message("Error Opening User Guide",
+                                    f"An error occurred while trying to open the user guide: {e}")
 
 
 if __name__ == '__main__':

@@ -1,0 +1,4 @@
+numpy==1.21.6
+torch==1.7.1+cu1
+Pillow==9.5.0
+PyQt5==5.15.9
