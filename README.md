@@ -7,7 +7,8 @@ generation model to generate new images. The focus will be on simplicity and eas
 rather than incorporating advanced features.
 
 ## Demo of the program
-https://github.com/BjornstadThomas/IMT4807/assets/57177252/151e8ed3-3786-4e0a-ad54-3f9662bb231e
+https://github.com/BjornstadThomas/IMT4807/assets/57177252/f9e78319-2bd0-496b-910d-56aec8644d30
+
 
 ## Setting up the environment
 Guide on how to setup the environment
